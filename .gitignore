@@ -1,0 +1,35 @@
+# ===== 构建产物 =====
+build/
+build1/
+out/
+bin/
+lib/
+*.obj
+*.pdb
+*.exe
+*.ilk
+
+# ===== IDE =====
+.vs/
+.vscode/
+.idea/
+*.user
+CMakeSettings.json
+
+# ===== 第三方库中编译用不到的部分(避免仓库膨胀,约 30 MB) =====
+# glm/doc  : 文档,CMake 完全不引用
+# glm/test : 单元测试,仅当 GLM_BUILD_TESTS=ON 时才会 add_subdirectory
+glm/doc/
+glm/test/
+
+# ===== 仅本地使用,不纳入版本管理 =====
+# src1/           早期原型
+# PLAN.md         个人计划,与 Fish 仓库里那份重复,以那边为准
+# Creat.bat       早期遗留脚本,含 rd /s /q build 和 move build\*.cpp src\
+src1/
+新建 文本文档.txt
+PLAN.md
+Creat.bat
+
+# ===== 工具配置 =====
+.claude/
