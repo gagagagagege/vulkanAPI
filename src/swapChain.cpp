@@ -111,7 +111,8 @@ namespace Fish {
 	void swapChain::recreateSwapChain(vk::raii::PhysicalDevice& physicalDevice, vk::raii::SurfaceKHR& surface,
 		GLFWwindow* window, vk::raii::Device& device, vk::raii::SwapchainKHR& swapChainHandle,
 		std::vector<vk::Image>& swapChainImages, vk::Format& swapChainImageFormat,
-		vk::Extent2D& swapChainExtent, std::vector<vk::raii::ImageView>& swapChainImageViews)
+		vk::Extent2D& swapChainExtent, std::vector<vk::raii::ImageView>& swapChainImageViews,
+		std::vector<vk::raii::Semaphore>& renderFinishedSemaphores)
 	{
 		int width = 0, height = 0;
 		glfwGetFramebufferSize(window, &width, &height);
@@ -138,9 +139,14 @@ namespace Fish {
 		swapChainImageViews.clear();
 		swapChainHandle = std::move(newSwapchain);
 		createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, device);
+
+		renderFinishedSemaphores.clear();
+		createRenderFinishedSemaphores(static_cast<uint32_t>(swapChainImages.size()), renderFinishedSemaphores, device);
 	}
-	void swapChain::cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews, vk::raii::SwapchainKHR& swapChainHandle)
+	void swapChain::cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews,
+		std::vector<vk::raii::Semaphore>& renderFinishedSemaphores, vk::raii::SwapchainKHR& swapChainHandle)
 	{
+		renderFinishedSemaphores.clear();
 		swapChainImageViews.clear();
 		swapChainHandle = nullptr;
 	}
@@ -154,6 +160,20 @@ namespace Fish {
 		for (auto& image : swapChainImages)
 		{
 			swapChainImageViews.emplace_back(Image::createView(image, swapChainImageFormat, device));
+		}
+	}
+
+	void swapChain::createRenderFinishedSemaphores(uint32_t imageCount,
+		std::vector<vk::raii::Semaphore>& renderFinishedSemaphores, vk::raii::Device& device)
+	{
+		assert(renderFinishedSemaphores.empty());
+
+		vk::SemaphoreCreateInfo semaphoreInfo{};
+
+		renderFinishedSemaphores.reserve(imageCount);
+		for (uint32_t i = 0; i < imageCount; i++)
+		{
+			renderFinishedSemaphores.emplace_back(device, semaphoreInfo);
 		}
 	}
 }

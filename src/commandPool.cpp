@@ -14,20 +14,19 @@ namespace Fish {
 
 		commandPool = vk::raii::CommandPool(device, poolInfo);
 	}
-	void commandPool::createCommandBuffers(vk::raii::CommandPool& commandPool, vk::raii::Device& device, std::vector<vk::raii::CommandBuffer>& commandBuffers, int count)
+	vk::raii::CommandBuffer commandPool::createCommandBuffer(vk::raii::CommandPool& commandPool, vk::raii::Device& device)
 	{
-		vk::CommandBufferAllocateInfo allocInfo{};
-		allocInfo.commandPool = *commandPool;
-		allocInfo.level = vk::CommandBufferLevel::ePrimary;
-		allocInfo.commandBufferCount = static_cast<uint32_t>(count);
+		vk::CommandBufferAllocateInfo allocInfo{ .commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1 };
 
-		commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+		// 分配 1 个再 move 出来。vk::raii::CommandBuffers 只是 std::vector 的子类、
+		// 没有析构函数,被搬走的那个元素在 vector 里变成空句柄,临时对象析构时跳过它。
+		return std::move(vk::raii::CommandBuffers(device, allocInfo).front());
 	}
-	void commandPool::recordCommandBuffer(vk::raii::CommandBuffer& commandBuffer, uint32_t imageIndex, uint32_t frameIndex,
-		const std::vector<vk::Image>& swapChainImages, const std::vector<vk::raii::ImageView>& swapChainImageViews,
+	void commandPool::recordCommandBuffer(vk::raii::CommandBuffer& commandBuffer,
+		vk::Image targetImage, vk::raii::ImageView& targetView,
 		vk::Extent2D& swapChainExtent, vk::raii::Pipeline& graphicsPipeline, vk::raii::Buffer& vertexBuffer,
 		const std::vector<Vertex>& vertices, vk::raii::Buffer& indexBuffer, const std::vector<uint16_t>& indices,
-		vk::raii::PipelineLayout& pipelineLayout, std::vector<vk::raii::DescriptorSet>& descriptorSets)
+		vk::raii::PipelineLayout& pipelineLayout, vk::raii::DescriptorSet& descriptorSet)
 	{
 		vk::CommandBufferBeginInfo beginInfo{};
 
@@ -39,7 +38,7 @@ namespace Fish {
 		colorBarrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
 		colorBarrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
 		colorBarrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-		colorBarrier.image = swapChainImages[imageIndex];
+		colorBarrier.image = targetImage;
 		colorBarrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 		colorBarrier.subresourceRange.baseMipLevel = 0;
 		colorBarrier.subresourceRange.levelCount = 1;
@@ -56,7 +55,7 @@ namespace Fish {
 		vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 
 		vk::RenderingAttachmentInfo colorAttachment{};
-		colorAttachment.imageView = *swapChainImageViews[imageIndex];
+		colorAttachment.imageView = *targetView;
 		colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
 		colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
 		colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -90,7 +89,7 @@ namespace Fish {
 
 		commandBuffer.bindVertexBuffers(0, *vertexBuffer, vk::DeviceSize{ 0 });
 		commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSet, nullptr);
 
 		commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
@@ -102,7 +101,7 @@ namespace Fish {
 		presentBarrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
 		presentBarrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
 		presentBarrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-		presentBarrier.image = swapChainImages[imageIndex];
+		presentBarrier.image = targetImage;
 		presentBarrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 		presentBarrier.subresourceRange.baseMipLevel = 0;
 		presentBarrier.subresourceRange.levelCount = 1;

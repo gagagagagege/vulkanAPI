@@ -1,0 +1,127 @@
+为什么 renderFinishedSemaphores 不跟其他同步对象一起按帧分
+记录于 2026-09-17，M1 FrameData 重构前的讨论。
+
+<hr>
+
+【问题】
+
+drawFrame 里三组同步对象，现在全都是 MAX_FRAMES_IN_FLIGHT 份（2），
+全都用 frameIndex 索引：
+
+    presentCompleteSemaphores[frameIndex]
+    renderFinishedSemaphores[frameIndex]
+    inFlightFences[frameIndex]
+
+但第三组按帧分是错的。验证层会报：
+
+    vkQueueSubmit(): pSubmits[0].pSignalSemaphores[0] is being signaled by VkQueue,
+    but it may still be in use by VkSwapchainKHR
+
+为什么只有它错？
+
+<hr>
+
+【回答】
+
+一、fence 和 renderFinished 是同一时刻点亮的
+
+VkSubmitInfo::pSignalSemaphores 和 vkQueueSubmit 的 fence 语义是一样的 ——
+都是"这批提交的工作完成时点亮"。所以同一次 submit 里，
+renderFinishedSemaphores[f] 和 inFlightFences[f] 是同时亮的。
+
+它俩是孪生的。区别不在"保证什么完成"，在"谁在等"：
+
+    对象                          点亮时刻               谁等它
+    --------------------------    -------------------    ------------------
+    inFlightFences[f]             submit 完成            CPU
+    renderFinishedSemaphores[i]   submit 完成（同一刻）   present / 呈现引擎
+
+二、presentComplete 根本不是"完成"语义
+
+    对象                          实际语义
+    --------------------------    ----------------------------------------
+    presentCompleteSemaphores[f]  acquire 点亮 → "图到手了，可以写了"
+    inFlightFences[f]             submit 完成 → "这一轮全做完了"
+    renderFinishedSemaphores[i]   submit 完成 → "画完了，可以拿去显示了"
+
+presentComplete 是"开始"，不是"完成"。它守的是图进来那条边界
+（呈现引擎 → GPU），renderFinished 守的是图出去那条（GPU → 呈现引擎）。
+
+所以按"完成 vs 未完成"分类是错的分法 —— 它会把 presentComplete
+和 renderFinished 分到两边，但那个分法没有用。
+
+三、真正的分界线：能不能观测到"它被消费完了"
+
+    对象                          复用安全的依据                            可观测
+    --------------------------    --------------------------------------    -------
+    inFlightFences[f]             CPU 亲口 waitForFences                    ✓
+    presentCompleteSemaphores[f]  同 slot 的 fence 已 signaled
+                                  ⟹ 上一轮 submit 早过了这个 wait 点        ✓（间接）
+    renderFinishedSemaphores[i]   无。fence 覆盖不到 present                 ✗
+
+关键在中间那行。presentComplete 之所以能跟 fence 住一起、按 frame 分，
+不是因为它"也是完成语义"（它不是），而是因为它的消费者是 submit，
+而 submit 在 fence 的覆盖范围内。
+
+    fence 覆盖 submit
+      ⟹ 凡是被 submit 消费的东西，复用时机都能从 fence 推出来
+      ⟹ 可以按 frame
+
+    renderFinished 的消费者是 present，在 fence 覆盖范围之外
+      ⟹ 推不出来
+      ⟹ 必须换一个保证来源
+
+这里还有个容易说错的点：presentComplete 的"可用"是【推出来】的，不是【检测出来】的。
+整个工程里它只出现两次 —— TriangleApp.cpp:147 被 acquire 点亮，:170 被 submit 消费。
+CPU 从没看过它一眼，而且看不了：VkSemaphore 没有查询状态的 API
+（vkGetSemaphoreCounterValue 是 timeline semaphore 独有的，二进制信号量没有）。
+
+同理，renderFinished "没有被检测"这个说法也不够准 —— 不是没检测，是【没有任何检测的手段】。
+它的消费者在呈现引擎里，那里既没有 fence，CPU 也进不去。就算想检测也没有那个 API。
+这个区别重要：如果是"忘了检测"，修法是补上检测；如果是"无法检测"，
+修法只能是换一个信息源 —— 而唯一能用的信息源就是 acquire 给的 imageIndex。
+所以分法是【被逼出来的】，不是选的。
+
+四、两个分法都是结构上被迫的，不是风格选择
+
+    对象                        按什么分   结构性原因
+    ------------------------    --------   --------------------------------------
+    presentCompleteSemaphores   frame      acquire 之前拿不到 imageIndex，
+                                           没法传一个还不存在的下标进去
+    renderFinishedSemaphores    image      fence 观测不到 present；
+                                           唯一的替代信息源是 acquire 给的 imageIndex
+    inFlightFences              frame      CPU 每帧只能等一个，否则就没流水线了
+
+第一条和第二条的展开：
+
+    // TriangleApp.cpp:147 —— imageIndex 是这一行的返回值
+    auto [result, imageIndex] = swapChain.acquireNextImage(
+        UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+    //                              ↑ 此刻 imageIndex 还不存在
+
+    // TriangleApp.cpp:175 —— 这里 imageIndex 早就拿到了
+    .pSignalSemaphores = &*renderFinishedSemaphores[frameIndex],
+    //                                                  完全可以写 [imageIndex]
+
+<hr>
+
+【结论】
+
+renderFinishedSemaphores 归 swapchain image，不归 frame。
+它的索引是 imageIndex，生命周期跟 swapChainImages / swapChainImageViews 一致
+（resize 时一起重建）。
+
+FrameData 的成员因此是 5 个：
+
+    commandBuffer / uniformBuffer / descriptorSet
+    presentCompleteSemaphore / inFlightFence
+
+代价：recreateSwapChain 得多管一组信号量。它现在的签名已经有 9 个参数
+（swapChain.h:33-36），是全工程仅次于 recordCommandBuffer（13 个）的第二长。
+
+<hr>
+
+【一句话】
+
+fence 只能替你证明"submit 线上的事"。renderFinished 的消费者在 present 线上，
+fence 管不着，只能借 acquire 的语义来保证 —— 而那个语义天然是按 image 索引的。

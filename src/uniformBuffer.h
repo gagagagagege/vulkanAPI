@@ -20,19 +20,23 @@ namespace Fish {
 		glm::mat4 proj;
 	};
 
+	// 只管 UBO 本身和它那一份描述符集
+	// 份数(每帧飞行一份)不在这里管
+	// 这里的函数都只处理单个对象
 	class uniformBuffer
 	{
 	public:
 		static void createDescriptorSetLayout(vk::raii::DescriptorSetLayout& descriptorSetLayout, vk::raii::Device& device);
-		static void createUniformBuffers(const int& MAX_FRAMES_IN_FLIGHT, std::vector<Buffer>& uniformBuffers, vkContext* context);
-		static void updateUniformBuffer(uint32_t currentImage, vk::Extent2D& swapChainExtent, std::vector<Buffer>& uniformBuffers);
-		static vk::raii::DescriptorPool createDescriptorPool(uint32_t MAX_FRAMES_IN_FLIGHT, vk::raii::Device& device);
-		static void createDescriptorSets(uint32_t MAX_FRAMES_IN_FLIGHT, std::vector<Buffer>& uniformBuffers,
-			vk::raii::DescriptorSetLayout& descriptorSetLayout, vk::raii::DescriptorPool& descriptorPool, vk::raii::Device& device,
-			std::vector<vk::raii::DescriptorSet>& descriptorSets, vk::raii::ImageView& textureImageView,
-			vk::raii::Sampler& textureSampler);
-	public:
-		UniformBufferObject ubo;
+
+		static vk::raii::DescriptorPool createDescriptorPool(uint32_t frameCount, vk::raii::Device& device);
+
+		// 分配并写好一个描述符集,绑的是调用方传进来的那一份 buffer。
+		// TODO: 顺带绑贴图不属于本类职责,见 BUFFER_REFACTOR_TODO.md 第五节第 2 条
+		static vk::raii::DescriptorSet createDescriptorSet(vk::raii::DescriptorPool& descriptorPool,
+			vk::raii::DescriptorSetLayout& descriptorSetLayout, vk::raii::Device& device,
+			Buffer& buffer, vk::raii::ImageView& textureImageView, vk::raii::Sampler& textureSampler);
+
+		static void updateUniformBuffer(vk::Extent2D& swapChainExtent, Buffer& buffer);
 	};
 
 }

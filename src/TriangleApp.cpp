@@ -31,6 +31,7 @@ namespace Fish {
 
 		swapChain::createSwapChain(deviceClass->physicalDevice, surface, window, deviceClass->device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
 		swapChain::createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, deviceClass->device);
+		swapChain::createRenderFinishedSemaphores(static_cast<uint32_t>(swapChainImages.size()), renderFinishedSemaphores, deviceClass->device);
 		uniformBuffer::createDescriptorSetLayout(descriptorSetLayout, deviceClass->device);
 		pipeline::createGraphicsPipeline(deviceClass->device, dynamicStates, swapChainExtent, pipelineLayout, swapChainImageFormat, graphicsPipeline, descriptorSetLayout);
 		commandPool::createCommandPool(deviceClass->physicalDevice, surface, deviceClass->device, commandPool);
@@ -38,11 +39,11 @@ namespace Fish {
 		mainTexture = texture::loadFromFile(deviceClass.get(), transientPool, "textures/texture.jpg");
 		vertexBuffer = Buffer::createVertexBuffer(vertices, deviceClass.get(), transientPool);
 		indexBuffer = Buffer::createIndexBuffer(indices, deviceClass.get(), transientPool);
-		uniformBuffer::createUniformBuffers(MAX_FRAMES_IN_FLIGHT, uniformBuffers, deviceClass.get());
+
+		// descriptorPool 要按份数定容量,所以先建;frames 从它里面拿描述符集。
 		descriptorPool = uniformBuffer::createDescriptorPool(MAX_FRAMES_IN_FLIGHT, deviceClass->device);
-		uniformBuffer::createDescriptorSets(MAX_FRAMES_IN_FLIGHT, uniformBuffers, descriptorSetLayout, descriptorPool, deviceClass->device, descriptorSets, mainTexture.getView(), mainTexture.getSampler());
-		commandPool::createCommandBuffers(commandPool, deviceClass->device, commandBuffers, MAX_FRAMES_IN_FLIGHT);
-		createSyncObjects();
+		frames = Frames(MAX_FRAMES_IN_FLIGHT, deviceClass.get(), commandPool, descriptorPool, descriptorSetLayout,
+			mainTexture.getView(), mainTexture.getSampler());
 	}
 
 	void TriangleApp::mainLoop()
@@ -55,7 +56,7 @@ namespace Fish {
 
 	void TriangleApp::cleanUp()
 	{
-		swapChain::cleanupSwapChain(swapChainImageViews, swapChain);
+		swapChain::cleanupSwapChain(swapChainImageViews, renderFinishedSemaphores, swapChain);
 
 		// 其余 Vulkan 资源由 vk::raii 句柄按成员声明逆序自动释放
 
@@ -118,66 +119,55 @@ namespace Fish {
 		instance = vk::raii::Instance(context, createInfo);
 	}
 
-	void TriangleApp::createSyncObjects()
-	{
-		presentCompleteSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-		renderFinishedSemaphores.reserve(MAX_FRAMES_IN_FLIGHT);
-		inFlightFences.reserve(MAX_FRAMES_IN_FLIGHT);
-
-		vk::SemaphoreCreateInfo semaphoreInfo{};
-
-		vk::FenceCreateInfo fenceInfo{};
-		fenceInfo.flags = vk::FenceCreateFlagBits::eSignaled;
-
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-			presentCompleteSemaphores.emplace_back(deviceClass->device, semaphoreInfo);
-			renderFinishedSemaphores.emplace_back(deviceClass->device, semaphoreInfo);
-			inFlightFences.emplace_back(deviceClass->device, fenceInfo);
-		}
-	}
-
 	void TriangleApp::drawFrame()
 	{
-		auto fenceResult = deviceClass->device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
+		// 这一帧的全部资源都在 frame 里。下标的轮转由 frames 管,
+		FrameData& frame = frames.current();
+
+		auto fenceResult = deviceClass->device.waitForFences(*frame.inFlightFence(), vk::True, UINT64_MAX);
 		if (fenceResult != vk::Result::eSuccess)
 		{
 			throw std::runtime_error("failed to wait for fence!");
 		}
 
-		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+		// imageIndex 是这一行的返回值
+		// 就地声明,不存
+		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *frame.presentCompleteSemaphore(), nullptr);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eErrorSurfaceLostKHR) {
 			swapChain::recreateSwapChain(deviceClass->physicalDevice, surface,
 				window, deviceClass->device, swapChain,
 				swapChainImages, swapChainImageFormat,
-				swapChainExtent, swapChainImageViews);
+				swapChainExtent, swapChainImageViews, renderFinishedSemaphores);
 			return;
 		}
 		else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
 			throw std::runtime_error("failed to acquire swap chain image!");
 		}
 
-		deviceClass->device.resetFences(*inFlightFences[frameIndex]);
+		deviceClass->device.resetFences(*frame.inFlightFence());
 
-		commandBuffers[frameIndex].reset();
-		commandPool::recordCommandBuffer(commandBuffers[frameIndex], imageIndex,frameIndex, swapChainImages, swapChainImageViews, swapChainExtent,
-			graphicsPipeline, vertexBuffer.getHandle(), vertices, indexBuffer.getHandle(), indices,pipelineLayout,descriptorSets);
+		frame.commandBuffer().reset();
+		commandPool::recordCommandBuffer(frame.commandBuffer(),
+			swapChainImages[imageIndex], swapChainImageViews[imageIndex], swapChainExtent,
+			graphicsPipeline, vertexBuffer.getHandle(), vertices, indexBuffer.getHandle(), indices,
+			pipelineLayout, frame.descriptorSet());
 
-		uniformBuffer::updateUniformBuffer(frameIndex, swapChainExtent, uniformBuffers);
+		uniformBuffer::updateUniformBuffer(swapChainExtent, frame.uniformBuffer());
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
-										  .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
+										  .pWaitSemaphores = &*frame.presentCompleteSemaphore(),
 										  .pWaitDstStageMask = &waitDestinationStageMask,
 										  .commandBufferCount = 1,
-										  .pCommandBuffers = &*commandBuffers[frameIndex],
+										  .pCommandBuffers = &*frame.commandBuffer(),
 										  .signalSemaphoreCount = 1,
-										  .pSignalSemaphores = &*renderFinishedSemaphores[frameIndex] };
+										  .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex] };
 
-		deviceClass->graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
+		deviceClass->graphicsQueue.submit(submitInfo, *frame.inFlightFence());
 
 		const vk::PresentInfoKHR presentInfoKHR{ .waitSemaphoreCount = 1,
-												.pWaitSemaphores = &*renderFinishedSemaphores[frameIndex],
+												.pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
 												.swapchainCount = 1,
 												.pSwapchains = &*swapChain,
 												.pImageIndices = &imageIndex };
@@ -189,13 +179,13 @@ namespace Fish {
 			swapChain::recreateSwapChain(deviceClass->physicalDevice, surface,
 				window, deviceClass->device, swapChain,
 				swapChainImages, swapChainImageFormat,
-				swapChainExtent, swapChainImageViews);
+				swapChainExtent, swapChainImageViews, renderFinishedSemaphores);
 		}
 		else if (result != vk::Result::eSuccess) {
 			throw std::runtime_error("failed to present swap chain image!");
 		}
 
-		frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+		frames.advance();
 	}
 
 	void TriangleApp::framebufferResizeCallback(GLFWwindow* window, int width, int height)

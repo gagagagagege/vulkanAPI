@@ -30,17 +30,23 @@ namespace Fish {
 			std::vector<vk::Image>& swapChainImages, vk::Format& swapChainImageFormat,
 			vk::Extent2D& swapChainExtent, vk::SwapchainKHR oldSwapchain = nullptr);
 
+		// renderFinishedSemaphores 跟 swapChainImages, swapChainImageViews 一起重建
 		static void recreateSwapChain(vk::raii::PhysicalDevice& physicalDevice, vk::raii::SurfaceKHR& surface,
 			GLFWwindow* window, vk::raii::Device& device, vk::raii::SwapchainKHR& swapChainHandle,
 			std::vector<vk::Image>& swapChainImages, vk::Format& swapChainImageFormat,
-			vk::Extent2D& swapChainExtent, std::vector<vk::raii::ImageView>& swapChainImageViews);
+			vk::Extent2D& swapChainExtent, std::vector<vk::raii::ImageView>& swapChainImageViews,
+			std::vector<vk::raii::Semaphore>& renderFinishedSemaphores);
 
-		static void cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews, vk::raii::SwapchainKHR& swapChainHandle);
+		static void cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews,
+			std::vector<vk::raii::Semaphore>& renderFinishedSemaphores, vk::raii::SwapchainKHR& swapChainHandle);
 
 		// 交换链 image 归呈现引擎所有,构造不出 Image 对象,
 		// 所以这边只借 Image::createView 包一层,view 自身由调用方持有。
 		static void createImageViews(const std::vector<vk::Image>& swapChainImages, std::vector<vk::raii::ImageView>& swapChainImageViews,
 			vk::Format swapChainImageFormat, vk::raii::Device& device);
+
+		static void createRenderFinishedSemaphores(uint32_t imageCount,
+			std::vector<vk::raii::Semaphore>& renderFinishedSemaphores, vk::raii::Device& device);
 	};
 
 }

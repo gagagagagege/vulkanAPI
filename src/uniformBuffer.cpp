@@ -11,20 +11,51 @@ namespace Fish {
 		descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
 	}
 
-	void uniformBuffer::createUniformBuffers(const int& MAX_FRAMES_IN_FLIGHT, std::vector<Buffer>& uniformBuffers, vkContext* context)
+	vk::raii::DescriptorPool uniformBuffer::createDescriptorPool(uint32_t frameCount, vk::raii::Device& device)
 	{
-		vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-
-		uniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-			uniformBuffers.emplace_back(
-				bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-				context);
-		}
+		std::array<vk::DescriptorPoolSize, 2> poolSize{ {{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = frameCount},
+												{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = frameCount}} };
+		vk::DescriptorPoolCreateInfo          poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+													   .maxSets = frameCount,
+													   .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
+													   .pPoolSizes = poolSize.data() };
+		vk::raii::DescriptorPool descriptorPool(device, poolInfo);
+		return descriptorPool;
 	}
 
-	void uniformBuffer::updateUniformBuffer(uint32_t frameIndex, vk::Extent2D& swapChainExtent, std::vector<Buffer>& uniformBuffers)
+	vk::raii::DescriptorSet uniformBuffer::createDescriptorSet(vk::raii::DescriptorPool& descriptorPool,
+		vk::raii::DescriptorSetLayout& descriptorSetLayout, vk::raii::Device& device,
+		Buffer& buffer, vk::raii::ImageView& textureImageView, vk::raii::Sampler& textureSampler)
+	{
+		std::vector<vk::DescriptorSetLayout> layouts{ *descriptorSetLayout };
+		vk::DescriptorSetAllocateInfo        allocInfo{ .descriptorPool = descriptorPool,
+													   .descriptorSetCount = 1,
+													   .pSetLayouts = layouts.data() };
+
+		// 分配 1 个再 move 出来。vk::raii::DescriptorSet 的析构是空操作,
+		// 真正释放发生在 pool 销毁时,所以单个句柄搬来搬去没有代价。
+		vk::raii::DescriptorSet descriptorSet = std::move(device.allocateDescriptorSets(allocInfo).front());
+
+		vk::DescriptorBufferInfo bufferInfo{ .buffer = buffer.getHandle(), .offset = 0, .range = sizeof(UniformBufferObject) };
+		vk::DescriptorImageInfo  imageInfo{ .sampler = textureSampler, .imageView = textureImageView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = descriptorSet,
+															 .dstBinding = 0,
+															 .dstArrayElement = 0,
+															 .descriptorCount = 1,
+															 .descriptorType = vk::DescriptorType::eUniformBuffer,
+															 .pBufferInfo = &bufferInfo},
+															{.dstSet = descriptorSet,
+															 .dstBinding = 1,
+															 .dstArrayElement = 0,
+															 .descriptorCount = 1,
+															 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+															 .pImageInfo = &imageInfo}} };
+		device.updateDescriptorSets(descriptorWrites, {});
+
+		return descriptorSet;
+	}
+
+	void uniformBuffer::updateUniformBuffer(vk::Extent2D& swapChainExtent, Buffer& buffer)
 	{
 		static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -36,49 +67,6 @@ namespace Fish {
 		ubo.view =  lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.proj =  glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1;
-		memcpy(uniformBuffers[frameIndex].map(0, sizeof(ubo)), &ubo, sizeof(ubo));
-	}
-
-	vk::raii::DescriptorPool uniformBuffer::createDescriptorPool(uint32_t MAX_FRAMES_IN_FLIGHT, vk::raii::Device& device)
-	{
-		std::array<vk::DescriptorPoolSize, 2> poolSize{ {{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = MAX_FRAMES_IN_FLIGHT},
-												{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = MAX_FRAMES_IN_FLIGHT}} };
-		vk::DescriptorPoolCreateInfo          poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-													   .maxSets = MAX_FRAMES_IN_FLIGHT,
-													   .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
-													   .pPoolSizes = poolSize.data() };
-		vk::raii::DescriptorPool descriptorPool(device, poolInfo);
-		return descriptorPool;
-	}
-
-	void uniformBuffer::createDescriptorSets(uint32_t MAX_FRAMES_IN_FLIGHT, std::vector<Buffer>& uniformBuffers,
-		vk::raii::DescriptorSetLayout& descriptorSetLayout, vk::raii::DescriptorPool& descriptorPool, vk::raii::Device& device,
-		std::vector<vk::raii::DescriptorSet>& descriptorSets, vk::raii::ImageView& textureImageView,
-	    vk::raii::Sampler& textureSampler)
-	{
-		std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-		vk::DescriptorSetAllocateInfo        allocInfo{ .descriptorPool = descriptorPool,
-													   .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-													   .pSetLayouts = layouts.data() };
-		descriptorSets = device.allocateDescriptorSets(allocInfo);
-
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-		{
-			vk::DescriptorBufferInfo bufferInfo{ .buffer = uniformBuffers[i].getHandle(), .offset = 0, .range = sizeof(UniformBufferObject) };
-			vk::DescriptorImageInfo  imageInfo{ .sampler = textureSampler, .imageView = textureImageView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-			std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = descriptorSets[i],
-															 .dstBinding = 0,
-															 .dstArrayElement = 0,
-															 .descriptorCount = 1,
-															 .descriptorType = vk::DescriptorType::eUniformBuffer,
-															 .pBufferInfo = &bufferInfo},
-															{.dstSet = descriptorSets[i],
-															 .dstBinding = 1,
-															 .dstArrayElement = 0,
-															 .descriptorCount = 1,
-															 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-															 .pImageInfo = &imageInfo}} };
-			device.updateDescriptorSets(descriptorWrites, {});
-		}
+		memcpy(buffer.map(0, sizeof(ubo)), &ubo, sizeof(ubo));
 	}
 }

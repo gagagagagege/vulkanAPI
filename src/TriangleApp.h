@@ -12,6 +12,7 @@
 #include "shader.h"
 #include "commandPool.h"
 #include "uniformBuffer.h"
+#include "frameData.h"
 #include "texture.h"
 
 #include <iostream>
@@ -45,7 +46,7 @@ namespace Fish {
 		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME };
 
 		vk::raii::SurfaceKHR surface = nullptr;
-		
+
 		//instance 之后、其他 device 资源之前声明
 		std::unique_ptr<vkContext> deviceClass;
 
@@ -54,6 +55,10 @@ namespace Fish {
 		vk::Format swapChainImageFormat;
 		vk::Extent2D swapChainExtent;
 		std::vector<vk::raii::ImageView> swapChainImageViews;
+
+		// present 用的信号量,每个 swapchain image 一份。
+		// 基数 = swapChainImages.size(),不是 MAX_FRAMES_IN_FLIGHT
+		std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 
 		std::vector<vk::DynamicState> dynamicStates = {
 			vk::DynamicState::eViewport,
@@ -66,17 +71,11 @@ namespace Fish {
 
 		vk::raii::CommandPool commandPool = nullptr;
 		vk::raii::CommandPool transientPool = nullptr;
-		std::vector<vk::raii::CommandBuffer> commandBuffers;
-
-		std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
-		std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
-		std::vector<vk::raii::Fence> inFlightFences;
 
 		bool framebufferResized = false;
 
-		const int MAX_FRAMES_IN_FLIGHT = 2;
-		uint32_t frameIndex = 0;
-		uint32_t imageIndex = 0;
+		// 每帧飞行的份数。唯一的配置点。
+		const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 		static const uint32_t WIDTH = 800;
 		static const uint32_t HEIGHT = 600;
@@ -96,18 +95,14 @@ namespace Fish {
 		Buffer vertexBuffer;
 		Buffer indexBuffer;
 
-		std::vector<Buffer> uniformBuffers;
-
 		vk::raii::DescriptorPool descriptorPool = nullptr;
-		std::vector<vk::raii::DescriptorSet> descriptorSets;
-
-		// Image + view + sampler 现在都归 texture 自己持有。
-		// 放在这里(原 textureImageMemory 的位置)是为了保持析构顺序不变:
-		// 仍先于 descriptorSets / descriptorPool 释放。
+		// 声明位置是被约束的:必须晚于 commandPool 和 descriptorPool,
+		// 逆序析构时 frames 才会先于它们释放(命令缓冲要还给 commandPool)。
+		Frames frames;
+		// Image + view + sampler 归 texture 自己持有。
+		// 保持在 frames 之后声明,沿用重构前的相对顺序(mainTexture 先释放)。
 		texture mainTexture;
 
-		vk::PipelineStageFlags sourceStage;
-		vk::PipelineStageFlags destinationStage;
 	private:
 		void initWindow();
 		void initVulkan();
@@ -115,7 +110,6 @@ namespace Fish {
 		void cleanUp();
 		void createInstance();
 
-		void createSyncObjects();
 		void drawFrame();
 		static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 	};
