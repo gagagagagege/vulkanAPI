@@ -3,11 +3,7 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan_raii.hpp>
 
-#include <stb_image.h>
-
-#include <utility>
-
-#include"swapChain.h"
+#include "image.h"
 
 namespace Fish {
 	class vkContext;
@@ -15,20 +11,18 @@ namespace Fish {
 	class texture
 	{
 	public:
-		static void createTextureImage(vkContext* context, vk::raii::Image& textureImage,
-			vk::raii::DeviceMemory& textureImageMemory, vk::raii::CommandPool& commandPool);
+		texture() = default;
+		static texture loadFromFile(vkContext* context, vk::raii::CommandPool& transientPool, const char* path);
 
-		static std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(vk::raii::Device& device, vk::raii::PhysicalDevice& physicalDevice,
-			const vk::Format& format, uint32_t width, uint32_t height, const vk::ImageTiling& tiling,
-			const vk::Flags<vk::ImageUsageFlagBits>& usage, const vk::MemoryPropertyFlags& properties);
+		Image&               getImage() { return m_image; }
+		vk::raii::ImageView& getView() { return m_image.getView(); }
+		vk::raii::Sampler&   getSampler() { return m_sampler; }
 
-		static void transitionImageLayout(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
-		static void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
+	private:
+		static vk::raii::Sampler createSampler(vk::raii::PhysicalDevice& physicalDevice, vk::raii::Device& device);
 
-		static void createTextureImageView(vk::raii::Image& textureImage, vk::raii::ImageView& textureImageView, vk::raii::Device& device);
-		static void createTextureSampler(vk::raii::PhysicalDevice& physicalDevice, vk::raii::Sampler& textureSampler, vk::raii::Device& device);
-	public:
-	
+	private:
+		Image m_image;
+		vk::raii::Sampler m_sampler = nullptr;
 	};
-
 }

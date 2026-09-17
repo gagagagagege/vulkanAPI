@@ -101,14 +101,13 @@ namespace Fish {
 		vk::raii::DescriptorPool descriptorPool = nullptr;
 		std::vector<vk::raii::DescriptorSet> descriptorSets;
 
-		vk::raii::DeviceMemory textureImageMemory = nullptr;
-		vk::raii::Image        textureImage = nullptr;
+		// Image + view + sampler 现在都归 texture 自己持有。
+		// 放在这里(原 textureImageMemory 的位置)是为了保持析构顺序不变:
+		// 仍先于 descriptorSets / descriptorPool 释放。
+		texture mainTexture;
 
 		vk::PipelineStageFlags sourceStage;
 		vk::PipelineStageFlags destinationStage;
-
-		vk::raii::ImageView    textureImageView = nullptr;
-		vk::raii::Sampler      textureSampler = nullptr;
 	private:
 		void initWindow();
 		void initVulkan();

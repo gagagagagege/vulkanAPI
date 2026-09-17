@@ -36,13 +36,9 @@ namespace Fish {
 			vk::Extent2D& swapChainExtent, std::vector<vk::raii::ImageView>& swapChainImageViews);
 
 		static void cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews, vk::raii::SwapchainKHR& swapChainHandle);
-		
-	};
 
-	class imageView {
-	public:
-		imageView() = default;
-		static vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::raii::Device& device);
+		// 交换链 image 归呈现引擎所有,构造不出 Image 对象,
+		// 所以这边只借 Image::createView 包一层,view 自身由调用方持有。
 		static void createImageViews(const std::vector<vk::Image>& swapChainImages, std::vector<vk::raii::ImageView>& swapChainImageViews,
 			vk::Format swapChainImageFormat, vk::raii::Device& device);
 	};

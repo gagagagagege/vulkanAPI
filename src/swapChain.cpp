@@ -1,4 +1,7 @@
 #include "swapChain.h"
+
+#include "image.h"
+
 #include <stdexcept>
 #include <iostream>
 #include <utility>
@@ -134,7 +137,7 @@ namespace Fish {
 
 		swapChainImageViews.clear();
 		swapChainHandle = std::move(newSwapchain);
-		imageView::createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, device);
+		createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, device);
 	}
 	void swapChain::cleanupSwapChain(std::vector<vk::raii::ImageView>& swapChainImageViews, vk::raii::SwapchainKHR& swapChainHandle)
 	{
@@ -142,17 +145,7 @@ namespace Fish {
 		swapChainHandle = nullptr;
 	}
 
-	vk::raii::ImageView imageView::createImageView(vk::Image const& image, vk::Format format, vk::raii::Device& device)
-	{
-		vk::ImageViewCreateInfo viewInfo{
-	  .image = image,
-	  .viewType = vk::ImageViewType::e2D,
-	  .format = format,
-	  .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1} };
-		return vk::raii::ImageView(device, viewInfo);
-	}
-
-	void imageView::createImageViews(const std::vector<vk::Image>& swapChainImages, std::vector<vk::raii::ImageView>& swapChainImageViews,
+	void swapChain::createImageViews(const std::vector<vk::Image>& swapChainImages, std::vector<vk::raii::ImageView>& swapChainImageViews,
 		vk::Format swapChainImageFormat, vk::raii::Device& device)
 	{
 		assert(swapChainImageViews.empty());
@@ -160,7 +153,7 @@ namespace Fish {
 		swapChainImageViews.reserve(swapChainImages.size());
 		for (auto& image : swapChainImages)
 		{
-			swapChainImageViews.emplace_back(createImageView(image, swapChainImageFormat,device));
+			swapChainImageViews.emplace_back(Image::createView(image, swapChainImageFormat, device));
 		}
 	}
 }

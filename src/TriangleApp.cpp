@@ -30,19 +30,17 @@ namespace Fish {
 		deviceClass = std::make_unique<vkContext>(instance, surface, deviceExtensions, validationLayers);
 
 		swapChain::createSwapChain(deviceClass->physicalDevice, surface, window, deviceClass->device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
-		imageView::createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, deviceClass->device);
+		swapChain::createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, deviceClass->device);
 		uniformBuffer::createDescriptorSetLayout(descriptorSetLayout, deviceClass->device);
 		pipeline::createGraphicsPipeline(deviceClass->device, dynamicStates, swapChainExtent, pipelineLayout, swapChainImageFormat, graphicsPipeline, descriptorSetLayout);
 		commandPool::createCommandPool(deviceClass->physicalDevice, surface, deviceClass->device, commandPool);
 		commandPool::createCommandPool(deviceClass->physicalDevice, surface, deviceClass->device, transientPool);
-		texture::createTextureImage(deviceClass.get(), textureImage, textureImageMemory, transientPool);
-		texture::createTextureImageView(textureImage, textureImageView, deviceClass->device);
-		texture::createTextureSampler(deviceClass->physicalDevice, textureSampler, deviceClass->device);
+		mainTexture = texture::loadFromFile(deviceClass.get(), transientPool, "textures/texture.jpg");
 		vertexBuffer = Buffer::createVertexBuffer(vertices, deviceClass.get(), transientPool);
 		indexBuffer = Buffer::createIndexBuffer(indices, deviceClass.get(), transientPool);
 		uniformBuffer::createUniformBuffers(MAX_FRAMES_IN_FLIGHT, uniformBuffers, deviceClass.get());
 		descriptorPool = uniformBuffer::createDescriptorPool(MAX_FRAMES_IN_FLIGHT, deviceClass->device);
-		uniformBuffer::createDescriptorSets(MAX_FRAMES_IN_FLIGHT, uniformBuffers, descriptorSetLayout, descriptorPool, deviceClass->device, descriptorSets,textureImageView,textureSampler);
+		uniformBuffer::createDescriptorSets(MAX_FRAMES_IN_FLIGHT, uniformBuffers, descriptorSetLayout, descriptorPool, deviceClass->device, descriptorSets, mainTexture.getView(), mainTexture.getSampler());
 		commandPool::createCommandBuffers(commandPool, deviceClass->device, commandBuffers, MAX_FRAMES_IN_FLIGHT);
 		createSyncObjects();
 	}
