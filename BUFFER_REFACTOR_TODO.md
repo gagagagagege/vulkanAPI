@@ -177,24 +177,19 @@ loader（`vulkan-1.dll`）会把**所有已注册 ICD 的 DLL 全部加载进来
 
 ---
 
-## 五、遗留的既有问题（非本次引入，不阻塞）
+## 五、遗留的既有问题（非本次引入，不阻塞）—— 全部已解决
 
-1. **present 信号量复用警告**（10 条后触发去重限制）
-   ```
-   vkQueueSubmit(): pSubmits[0].pSignalSemaphores[0] is being signaled by VkQueue,
-   but it may still be in use by VkSwapchainKHR
-   ```
-   这是 Vulkan 教程里帧同步代码的经典问题：`renderFinishedSemaphores[frameIndex]`
-   在 present 尚未完成时被重新 signal。严格来说是个竞态。
-   常见修法是给每个 swapchain image 配一个 present 信号量，而不是每个 frame-in-flight 一个。
+1. **present 信号量复用警告** —— ✅ 已修。改成每个 swapchain image 一份
+   （`SwapChain::createRenderFinishedSemaphores`，基数 = `imageCount` 而不是 `MAX_FRAMES_IN_FLIGHT`）。
 
-2. **`uniformBuffer::createDescriptorSets` 顺带绑了贴图**（`uniformBuffer.cpp:68`）
-   它管的是整个 set 的绑定，不只是 UBO。重构时可以理一理。
+2. **`createDescriptorSet` 顺带绑了贴图** —— ✅ 已修。原函数是
+   `uniformBuffer::createDescriptorSet`，现在整体变成 `DescriptorAllocator`，
+   "交付写完的 set" 就是这个类的本职，贴图出现在签名里不再越界。
 
-3. **`uniformBuffer.h` 里 `UniformBufferObject ubo;` 成员是死的。**
-   `updateUniformBuffer` 里的 `UniformBufferObject ubo{}` 是局部变量，把它遮蔽了。
+3. **`uniformBuffer.h` 里 `UniformBufferObject ubo;` 成员是死的** —— ✅ 已消失，该类现在没有成员变量。
 
-4. **`const int& MAX_FRAMES_IN_FLIGHT` 按 const 引用传 int** —— 按值就行。
+4. **`const int& MAX_FRAMES_IN_FLIGHT` 按 const 引用传 int** —— ✅ 已消失，
+   现在是 `TriangleApp.h` 的成员常量，没有按引用传的地方。
 
 ---
 

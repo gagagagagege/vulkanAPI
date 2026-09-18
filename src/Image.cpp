@@ -1,7 +1,7 @@
-#include "image.h"
+#include "Image.h"
 
-#include "buffer.h"
-#include "PhysicalDevice.h"
+#include "Buffer.h"
+#include "vkContext.h"
 
 #include <stdexcept>
 

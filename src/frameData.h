@@ -2,13 +2,15 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan_raii.hpp>
 
-#include "buffer.h"
+#include "Buffer.h"
 
 #include <vector>
 #include <cstdint>
 
 namespace Fish {
 	class vkContext;
+	class CommandPool;
+	class DescriptorAllocator;
 
 	// 一次飞行中的帧所需的全部资源 —— 一个 FrameData 就是一个可复用的"帧槽"。
 	//
@@ -20,15 +22,14 @@ namespace Fish {
 	// 换句话说:这 5 个不能分开管。
 	//
 	// 不在这里的:renderFinishedSemaphores —— 那个按 swapchain image 分,
-	// 理由见 swapChain::createRenderFinishedSemaphores 的注释。
+	// 理由见 SwapChain::createRenderFinishedSemaphores 的注释。
 	class FrameData
 	{
 	public:
 		FrameData() = default;
 		FrameData(vkContext* context,
-			vk::raii::CommandPool& commandPool,
-			vk::raii::DescriptorPool& descriptorPool,
-			vk::raii::DescriptorSetLayout& descriptorSetLayout,
+			CommandPool& commandPool,
+			DescriptorAllocator& descriptorAllocator,
 			vk::raii::ImageView& textureView,
 			vk::raii::Sampler& textureSampler);
 		~FrameData() = default;
@@ -47,8 +48,9 @@ namespace Fish {
 		//-----------------------
 
 	private:
-		//声明顺序,销毁逆序。buffer 先于 descriptorSet 声明,
-		//保证 set 先走(虽然 vk::raii::DescriptorSet 的析构本身是空操作)。
+		//声明顺序,销毁逆序。buffer 先于 descriptorSet 声明,保证 set 先走 ——
+		//set 的析构会调 vkFreeDescriptorSets,它需要的是 pool 还活着,
+		//而 pool 在 FrameData 外面(见 TriangleApp.h 里 frames 的声明位置注释)。
 		Buffer                  m_uniformBuffer;
 		vk::raii::DescriptorSet m_descriptorSet = nullptr;
 		vk::raii::CommandBuffer m_commandBuffer = nullptr;
@@ -66,9 +68,8 @@ namespace Fish {
 	public:
 		Frames() = default;
 		Frames(uint32_t frameCount, vkContext* context,
-			vk::raii::CommandPool& commandPool,
-			vk::raii::DescriptorPool& descriptorPool,
-			vk::raii::DescriptorSetLayout& descriptorSetLayout,
+			CommandPool& commandPool,
+			DescriptorAllocator& descriptorAllocator,
 			vk::raii::ImageView& textureView,
 			vk::raii::Sampler& textureSampler);
 

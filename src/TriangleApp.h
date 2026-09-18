@@ -5,13 +5,13 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "ValidationLayers.h"
-#include "PhysicalDevice.h"
+#include "vkContext.h"
 #include "surface.h"
-#include "swapChain.h"
-#include "pipeline.h"
+#include "SwapChain.h"
+#include "Pipeline.h"
 #include "shader.h"
-#include "commandPool.h"
-#include "uniformBuffer.h"
+#include "CommandPool.h"
+#include "DescriptorAllocator.h"
 #include "frameData.h"
 #include "texture.h"
 
@@ -50,27 +50,26 @@ namespace Fish {
 		//instance 之后、其他 device 资源之前声明
 		std::unique_ptr<vkContext> deviceClass;
 
-		vk::raii::SwapchainKHR swapChain = nullptr;
-		std::vector<vk::Image> swapChainImages;
-		vk::Format swapChainImageFormat;
-		vk::Extent2D swapChainExtent;
-		std::vector<vk::raii::ImageView> swapChainImageViews;
-
-		// present 用的信号量,每个 swapchain image 一份。
-		// 基数 = swapChainImages.size(),不是 MAX_FRAMES_IN_FLIGHT
-		std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+		// 交换链 + image + view + present 信号量,一个对象管完。
+		// 重建边界就是这四样的边界,见 SwapChain::recreate。
+		SwapChain swapChain;
 
 		std::vector<vk::DynamicState> dynamicStates = {
 			vk::DynamicState::eViewport,
 			vk::DynamicState::eScissor
 		};
 
-		vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
-		vk::raii::PipelineLayout pipelineLayout = nullptr;
-		vk::raii::Pipeline graphicsPipeline = nullptr;
+		// 描述符的 layout + pool,设备级全局一份。必须早于 frames ——
+		// 描述符集要还给这个池(见下面 frames 的声明位置注释)。
+		DescriptorAllocator descriptorAllocator;
 
-		vk::raii::CommandPool commandPool = nullptr;
-		vk::raii::CommandPool transientPool = nullptr;
+		// pipelineLayout 归 Pipeline 自己持有
+		Pipeline graphicsPipeline;
+
+		// 两个池都是"批量单位":commandPool 管每帧的命令缓冲,
+		// transientPool 管上传用的一次性拷贝。必须早于 frames —— 命令缓冲要还回来。
+		CommandPool commandPool;
+		CommandPool transientPool;
 
 		bool framebufferResized = false;
 
@@ -91,16 +90,17 @@ namespace Fish {
 			0, 1, 2, 2, 3, 0
 		};
 
-		// 缓冲与内存：内存须晚于缓冲销毁，故先声明内存
 		Buffer vertexBuffer;
 		Buffer indexBuffer;
 
-		vk::raii::DescriptorPool descriptorPool = nullptr;
-		// 声明位置是被约束的:必须晚于 commandPool 和 descriptorPool,
-		// 逆序析构时 frames 才会先于它们释放(命令缓冲要还给 commandPool)。
+		// 声明位置是被约束的:必须晚于 commandPool / transientPool 和 descriptorAllocator。
+		// 逆序析构时 frames 才会先于它们释放 —— 命令缓冲的析构要调
+		// vkFreeCommandBuffers、描述符集的析构要调 vkFreeDescriptorSets,
+		// 两者都需要各自的池还活着。
 		Frames frames;
 		// Image + view + sampler 归 texture 自己持有。
-		// 保持在 frames 之后声明,沿用重构前的相对顺序(mainTexture 先释放)。
+		// 排在 frames 之后是沿用重构前的顺序,这里不是硬约束 ——
+		// 和上面 frames 那条不同,释放描述符集不碰 image view / sampler。
 		texture mainTexture;
 
 	private:

@@ -56,12 +56,14 @@ cd build/Debug && ./VulkanProject.exe    # Windows
 
 ```
 src/
-├── PhysicalDevice.h/.cpp    vkContext：队列族选择、物理设备打分、逻辑设备与队列
-├── buffer.h/.cpp            GPU 缓冲封装（顶点 / 索引 / UBO / staging），含 map/unmap
-├── swapChain.h/.cpp         swapchain 与 imageView 的创建、重建
-├── pipeline.h/.cpp          图形管线（含顶点输入布局）
-├── commandPool.h/.cpp       命令池、命令缓冲录制、一次性提交命令
-├── uniformBuffer.h/.cpp     UBO 与描述符集 / 描述符池
+├── vkContext.h/.cpp         队列族选择、物理设备打分、逻辑设备与队列
+├── Buffer.h/.cpp            GPU 缓冲封装（顶点 / 索引 / UBO / staging），含 map/unmap
+├── Image.h/.cpp             图像 + view + sampler 的持有者
+├── SwapChain.h/.cpp         交换链 + image + view + present 信号量；重建的边界就是它
+├── Pipeline.h/.cpp          图形管线与它的 pipelineLayout（含顶点输入布局）
+├── CommandPool.h/.cpp       命令池；另外放命令缓冲录制与一次性提交命令
+├── frameData.h/.cpp         FrameData（每帧一份的资源）与 Frames（N 份 + 当前下标）
+├── DescriptorAllocator.h/.cpp  描述符 layout + pool，以及 UBO 每帧的 MVP 写入
 ├── texture.h/.cpp           纹理加载、图像布局转换、采样器
 ├── shader.h/.cpp            SPIR-V 加载
 ├── ValidationLayers.h/.cpp  校验层与调试回调

@@ -1,4 +1,4 @@
-#include "PhysicalDevice.h"
+#include "vkContext.h"
 
 #include <set>
 
@@ -28,7 +28,8 @@ namespace Fish {
         return indices;
     }
 
-    vkContext::vkContext(vk::raii::Instance& instance, vk::raii::SurfaceKHR& surface, const std::vector<const char*>& deviceExtensions, const std::vector<const char*>& validationLayers)
+    vkContext::vkContext(vk::raii::Instance& instance, vk::raii::SurfaceKHR& surface_, const std::vector<const char*>& deviceExtensions, const std::vector<const char*>& validationLayers)
+        : surface(surface_)
     {
         physicalDevice = pickPhysicalDevice(instance, surface, deviceExtensions);
         createLogicalDevice(validationLayers, surface, deviceExtensions);

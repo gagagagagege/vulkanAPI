@@ -1,13 +1,12 @@
-#include "pipeline.h"
+#include "Pipeline.h"
 
 #include <stdexcept>
 
 namespace Fish {
-	void pipeline::createGraphicsPipeline(vk::raii::Device& device, std::vector<vk::DynamicState>& dynamicStates,
-		vk::Extent2D& swapChainExtent, vk::raii::PipelineLayout& pipelineLayout, vk::Format swapChainImageFormat,
-		vk::raii::Pipeline& graphicsPipeline, vk::raii::DescriptorSetLayout& descriptorSetLayout)
+	Pipeline::Pipeline(vkContext* context, const std::vector<vk::DynamicState>& dynamicStates,
+		vk::Format swapChainImageFormat, vk::raii::DescriptorSetLayout& descriptorSetLayout)
 	{
-		vk::raii::ShaderModule shaderModule = shader::createShaderModule(shader::readFile("shaders/slang.spv"),device);
+		vk::raii::ShaderModule shaderModule = shader::createShaderModule(shader::readFile("shaders/slang.spv"), context->device);
 
 		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
 			.stage = vk::ShaderStageFlagBits::eVertex,
@@ -42,18 +41,10 @@ namespace Fish {
 		inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
 		inputAssembly.primitiveRestartEnable = vk::False;
 
-		//视口和裁剪矩形
-		vk::Viewport viewport{};
-		viewport.x = 0.0f;
-		viewport.y = 0.0f;
-		viewport.width = (float)swapChainExtent.width;
-		viewport.height = (float)swapChainExtent.height;
-		viewport.minDepth = 0.0f;
-		viewport.maxDepth = 1.0f;
-
-		vk::Rect2D scissor{};
-		scissor.offset = vk::Offset2D{ 0, 0 };
-		scissor.extent = swapChainExtent;
+		// 动态状态里有 eViewport / eScissor,这两个会被录制时设的值覆盖。
+		// 但 pViewports / pScissors 不能为空,所以填占位值 —— 数值本身没有意义。
+		vk::Viewport viewport{ 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f };
+		vk::Rect2D   scissor{ vk::Offset2D{ 0, 0 }, vk::Extent2D{ 1, 1 } };
 
 		vk::PipelineViewportStateCreateInfo viewportState{};
 		viewportState.viewportCount = 1;
@@ -68,7 +59,7 @@ namespace Fish {
 		rasterizer.polygonMode = vk::PolygonMode::eFill;
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-		rasterizer.frontFace = vk::FrontFace::eCounterClockwise, 
+		rasterizer.frontFace = vk::FrontFace::eCounterClockwise,
 		rasterizer.depthBiasEnable = vk::False;
 		rasterizer.depthBiasConstantFactor = 0.0f; // Optional
 		rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -80,8 +71,8 @@ namespace Fish {
 		multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
 		multisampling.minSampleShading = 1.0f; // Optional
 		multisampling.pSampleMask = nullptr; // Optional
-		multisampling.alphaToCoverageEnable = vk::False; // Optional
-		multisampling.alphaToOneEnable = vk::False; // Optional
+		multisampling.alphaToCoverageEnable = vk::False;
+		multisampling.alphaToOneEnable = vk::False;
 
 		//颜色混合
 		vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
@@ -109,7 +100,7 @@ namespace Fish {
 			.setLayoutCount = 1, .pSetLayouts = &*descriptorSetLayout, .pushConstantRangeCount = 0
 		};
 
-		pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+		m_layout = vk::raii::PipelineLayout(context->device, pipelineLayoutInfo);
 
 		//动态渲染:通过 pNext 指定颜色附件格式,替代 render pass / subpass
 		vk::PipelineRenderingCreateInfo renderingCreateInfo{};
@@ -128,14 +119,14 @@ namespace Fish {
 		pipelineInfo.pDepthStencilState = nullptr; // Optional
 		pipelineInfo.pColorBlendState = &colorBlending;
 		pipelineInfo.pDynamicState = &dynamicState;
-		pipelineInfo.layout = *pipelineLayout;
+		pipelineInfo.layout = *m_layout;
 		pipelineInfo.renderPass = nullptr; // 动态渲染下不绑定 render pass
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = nullptr; // Optional
 		pipelineInfo.basePipelineIndex = -1; // Optional
 
-		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+		m_pipeline = vk::raii::Pipeline(context->device, nullptr, pipelineInfo);
 
-		// vertShaderModule / fragShaderModule 在作用域结束时由 RAII 自动释放
+		// shaderModule 在作用域结束时由 RAII 自动释放
 	}
 }

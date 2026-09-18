@@ -29,20 +29,16 @@ namespace Fish {
 
 		deviceClass = std::make_unique<vkContext>(instance, surface, deviceExtensions, validationLayers);
 
-		swapChain::createSwapChain(deviceClass->physicalDevice, surface, window, deviceClass->device, swapChain, swapChainImages, swapChainImageFormat, swapChainExtent);
-		swapChain::createImageViews(swapChainImages, swapChainImageViews, swapChainImageFormat, deviceClass->device);
-		swapChain::createRenderFinishedSemaphores(static_cast<uint32_t>(swapChainImages.size()), renderFinishedSemaphores, deviceClass->device);
-		uniformBuffer::createDescriptorSetLayout(descriptorSetLayout, deviceClass->device);
-		pipeline::createGraphicsPipeline(deviceClass->device, dynamicStates, swapChainExtent, pipelineLayout, swapChainImageFormat, graphicsPipeline, descriptorSetLayout);
-		commandPool::createCommandPool(deviceClass->physicalDevice, surface, deviceClass->device, commandPool);
-		commandPool::createCommandPool(deviceClass->physicalDevice, surface, deviceClass->device, transientPool);
+		swapChain = SwapChain(deviceClass.get(), window);
+		descriptorAllocator = DescriptorAllocator(deviceClass.get(), MAX_FRAMES_IN_FLIGHT);
+		graphicsPipeline = Pipeline(deviceClass.get(), dynamicStates, swapChain.imageFormat(), descriptorAllocator.layout());
+		commandPool = CommandPool(deviceClass.get());
+		transientPool = CommandPool(deviceClass.get());
 		mainTexture = texture::loadFromFile(deviceClass.get(), transientPool, "textures/texture.jpg");
 		vertexBuffer = Buffer::createVertexBuffer(vertices, deviceClass.get(), transientPool);
 		indexBuffer = Buffer::createIndexBuffer(indices, deviceClass.get(), transientPool);
 
-		// descriptorPool 要按份数定容量,所以先建;frames 从它里面拿描述符集。
-		descriptorPool = uniformBuffer::createDescriptorPool(MAX_FRAMES_IN_FLIGHT, deviceClass->device);
-		frames = Frames(MAX_FRAMES_IN_FLIGHT, deviceClass.get(), commandPool, descriptorPool, descriptorSetLayout,
+		frames = Frames(MAX_FRAMES_IN_FLIGHT, deviceClass.get(), commandPool, descriptorAllocator,
 			mainTexture.getView(), mainTexture.getSampler());
 	}
 
@@ -56,9 +52,11 @@ namespace Fish {
 
 	void TriangleApp::cleanUp()
 	{
-		swapChain::cleanupSwapChain(swapChainImageViews, renderFinishedSemaphores, swapChain);
+		// 必须等 GPU 空转再往下走:最后一帧的 submit / present 可能还在飞,
+		// 不等就析构会去摧毁正在被 queue 使用的 fence / 信号量 / 命令缓冲 / 交换链。
+		deviceClass->device.waitIdle();
 
-		// 其余 Vulkan 资源由 vk::raii 句柄按成员声明逆序自动释放
+		// 其余 Vulkan 资源(含交换链那一组)由 vk::raii 句柄按成员声明逆序自动释放
 
 		glfwDestroyWindow(window);
 		glfwTerminate();
@@ -132,13 +130,10 @@ namespace Fish {
 
 		// imageIndex 是这一行的返回值
 		// 就地声明,不存
-		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *frame.presentCompleteSemaphore(), nullptr);
+		auto [result, imageIndex] = swapChain.handle().acquireNextImage(UINT64_MAX, *frame.presentCompleteSemaphore(), nullptr);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eErrorSurfaceLostKHR) {
-			swapChain::recreateSwapChain(deviceClass->physicalDevice, surface,
-				window, deviceClass->device, swapChain,
-				swapChainImages, swapChainImageFormat,
-				swapChainExtent, swapChainImageViews, renderFinishedSemaphores);
+			swapChain.recreate();
 			return;
 		}
 		else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
@@ -148,12 +143,12 @@ namespace Fish {
 		deviceClass->device.resetFences(*frame.inFlightFence());
 
 		frame.commandBuffer().reset();
-		commandPool::recordCommandBuffer(frame.commandBuffer(),
-			swapChainImages[imageIndex], swapChainImageViews[imageIndex], swapChainExtent,
-			graphicsPipeline, vertexBuffer.getHandle(), vertices, indexBuffer.getHandle(), indices,
-			pipelineLayout, frame.descriptorSet());
+		recordCommandBuffer(frame.commandBuffer(),
+			swapChain, imageIndex, graphicsPipeline,
+			vertexBuffer, vertices, indexBuffer, indices,
+			frame.descriptorSet());
 
-		uniformBuffer::updateUniformBuffer(swapChainExtent, frame.uniformBuffer());
+		updateUniformBuffer(swapChain.extent(), frame.uniformBuffer());
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
@@ -162,24 +157,21 @@ namespace Fish {
 										  .commandBufferCount = 1,
 										  .pCommandBuffers = &*frame.commandBuffer(),
 										  .signalSemaphoreCount = 1,
-										  .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex] };
+										  .pSignalSemaphores = &*swapChain.renderFinishedSemaphore(imageIndex) };
 
 		deviceClass->graphicsQueue.submit(submitInfo, *frame.inFlightFence());
 
 		const vk::PresentInfoKHR presentInfoKHR{ .waitSemaphoreCount = 1,
-												.pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
+												.pWaitSemaphores = &*swapChain.renderFinishedSemaphore(imageIndex),
 												.swapchainCount = 1,
-												.pSwapchains = &*swapChain,
+												.pSwapchains = &*swapChain.handle(),
 												.pImageIndices = &imageIndex };
 
 		result = deviceClass->presentQueue.presentKHR(presentInfoKHR);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || result == vk::Result::eErrorSurfaceLostKHR || framebufferResized) {
 			framebufferResized = false;
-			swapChain::recreateSwapChain(deviceClass->physicalDevice, surface,
-				window, deviceClass->device, swapChain,
-				swapChainImages, swapChainImageFormat,
-				swapChainExtent, swapChainImageViews, renderFinishedSemaphores);
+			swapChain.recreate();
 		}
 		else if (result != vk::Result::eSuccess) {
 			throw std::runtime_error("failed to present swap chain image!");

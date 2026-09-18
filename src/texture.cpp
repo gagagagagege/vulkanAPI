@@ -3,9 +3,9 @@
 
 #include "texture.h"
 
-#include "buffer.h"
-#include "commandPool.h"
-#include "PhysicalDevice.h"
+#include "Buffer.h"
+#include "CommandPool.h"
+#include "vkContext.h"
 
 #include <cstring>
 #include <memory>
@@ -16,7 +16,7 @@ namespace Fish {
 	// 通道数写一处,和 stbi_load 的 desired_channels、imageSize 的乘法共用
 	constexpr int channels = STBI_rgb_alpha;
 
-	texture texture::loadFromFile(vkContext* context, vk::raii::CommandPool& transientPool, const char* path)
+	texture texture::loadFromFile(vkContext* context, CommandPool& transientPool, const char* path)
 	{
 		int texWidth = 0, texHeight = 0, texChannels = 0;
 		stbi_uc* pixels = stbi_load(path, &texWidth, &texHeight, &texChannels, channels);
@@ -41,12 +41,12 @@ namespace Fish {
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
 			vk::MemoryPropertyFlagBits::eDeviceLocal, context);
 
-		vk::raii::CommandBuffer commandBuffer = commandPool::beginSingleTimeCommands(transientPool, context->device);
+		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands(context, transientPool);
 		tex.m_image.transitionLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 		tex.m_image.copyFrom(commandBuffer, stagingBuffer.getHandle(),
 			static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 		tex.m_image.transitionLayout(commandBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-		commandPool::endSingleTimeCommands(commandBuffer, context->graphicsQueue);
+		endSingleTimeCommands(context, commandBuffer);
 
 		tex.m_sampler = createSampler(context->physicalDevice, context->device);
 		return tex;

@@ -3,16 +3,17 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan_raii.hpp>
 
-#include "image.h"
+#include "Image.h"
 
 namespace Fish {
 	class vkContext;
+	class CommandPool;
 
 	class texture
 	{
 	public:
 		texture() = default;
-		static texture loadFromFile(vkContext* context, vk::raii::CommandPool& transientPool, const char* path);
+		static texture loadFromFile(vkContext* context, CommandPool& transientPool, const char* path);
 
 		Image&               getImage() { return m_image; }
 		vk::raii::ImageView& getView() { return m_image.getView(); }

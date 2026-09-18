@@ -114,7 +114,10 @@ exe 和资源都正常产出,**不用管,也不要花时间去修**。
    `vk::raii::CommandBuffers` / `vk::raii::DescriptorSets` 都是。
    "分配 1 个再 `std::move(...front())`"是安全套路 —— 被搬走的元素在 vector 里变成
    空句柄,临时对象析构时跳过它。
-2. **`vk::raii::DescriptorSet` 的析构是空操作**(真正释放发生在 `descriptorPool` 销毁时)。
+2. **`vk::raii::DescriptorSet` 的析构会真的调 `vkFreeDescriptorSets`。**
+   `vulkan_raii.hpp` 里 `~DescriptorSet()` → `clear()`,而 `clear()` 里就是
+   `vkFreeDescriptorSets(device, pool, 1, &set)`(头文件 :9702 / :9747 / :9751)。
+   **所以 set 必须早于它所属的 `descriptorPool` 释放** —— 池先死,这条路就踩空句柄。
 3. **`vk::raii::CommandBuffer` 的析构会 `vkFreeCommandBuffers`。**
    所以**命令缓冲必须早于 `commandPool` 释放** —— 持有它的成员(如 `Frames`)
    在 `TriangleApp` 里的声明位置是被约束的。

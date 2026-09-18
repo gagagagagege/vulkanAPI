@@ -10,6 +10,7 @@
 
 namespace Fish {
 	class vkContext;
+	class CommandPool;
 
 	struct Vertex {
 		glm::vec2 pos;
@@ -31,15 +32,16 @@ namespace Fish {
 		Buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags& properties, vkContext* context);
 		~Buffer() { unmap(); }
 
-		void copyBuffer(const vk::raii::Buffer& srcBuffer, vk::raii::CommandPool& transientPool);
+		void copyBuffer(const vk::raii::Buffer& srcBuffer, CommandPool& transientPool);
 
-		static Buffer createVertexBuffer(const std::vector<Vertex>& vertices, vkContext* context, vk::raii::CommandPool& transientPool);
-		static Buffer createIndexBuffer(const std::vector<uint16_t>& indices, vkContext* context, vk::raii::CommandPool& transientPool);
+		static Buffer createVertexBuffer(const std::vector<Vertex>& vertices, vkContext* context, CommandPool& transientPool);
+		static Buffer createIndexBuffer(const std::vector<uint16_t>& indices, vkContext* context, CommandPool& transientPool);
 
 		// 内存类型查询只依赖物理设备,不依赖 context,故保持裸句柄入参(texture 侧也在用)
 		static uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties, vk::raii::PhysicalDevice& physicalDevice);
 		
 		vk::raii::Buffer& getHandle() { return m_buffer; }
+		const vk::raii::Buffer& getHandle() const { return m_buffer; }
 		vk::raii::DeviceMemory& getMemory() { return m_memory; }
 		vk::DeviceSize getSize() { return m_size; }
 

@@ -83,6 +83,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1
     NOMINMAX
+    # 不定义这个,vk::raii 的 acquireNextImage / presentKHR 遇到
+    # VK_ERROR_OUT_OF_DATE_KHR 会直接抛异常,drawFrame 里那两个 if 分支永远走不到。
+    # 定义了才是"把错误码当返回值还给我"的行为。
+    VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS=1
     $<$<CONFIG:Debug>:DEBUG>
 )
 

@@ -1,6 +1,6 @@
-#include "buffer.h"
-#include "commandPool.h"
-#include "PhysicalDevice.h"
+#include "Buffer.h"
+#include "CommandPool.h"
+#include "vkContext.h"
 
 #include <array>
 #include <cstddef>
@@ -43,17 +43,17 @@ namespace Fish {
 		m_buffer.bindMemory(m_memory, 0);
 	}
 
-	void Buffer::copyBuffer(const vk::raii::Buffer& srcBuffer, vk::raii::CommandPool& transientPool)
+	void Buffer::copyBuffer(const vk::raii::Buffer& srcBuffer, CommandPool& transientPool)
 	{
-		vk::raii::CommandBuffer commandBuffer = commandPool::beginSingleTimeCommands(transientPool,m_context->device);
+		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands(m_context, transientPool);
 
 		commandBuffer.copyBuffer(srcBuffer, m_buffer, vk::BufferCopy{ .size = m_size });
 
-		commandPool::endSingleTimeCommands(commandBuffer, m_context->graphicsQueue);
+		endSingleTimeCommands(m_context, commandBuffer);
 		// 临时命令缓冲随 transientPool 销毁时一并释放
 	}
 
-	Buffer Buffer::createVertexBuffer(const std::vector<Vertex>& vertices, vkContext* context, vk::raii::CommandPool& transientPool)
+	Buffer Buffer::createVertexBuffer(const std::vector<Vertex>& vertices, vkContext* context, CommandPool& transientPool)
 	{
 		vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
@@ -69,7 +69,7 @@ namespace Fish {
 		return dstBuffer;
 	}
 
-	Buffer Buffer::createIndexBuffer(const std::vector<uint16_t>& indices, vkContext* context, vk::raii::CommandPool& transientPool)
+	Buffer Buffer::createIndexBuffer(const std::vector<uint16_t>& indices, vkContext* context, CommandPool& transientPool)
 	{
 		vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 

@@ -10,7 +10,7 @@ namespace Fish {
 	// GPU 侧的一张图像:VkImage + 它绑定的显存 + 描述怎么解释它的 view。
 
 	// 交换链的 image 不归这个类管,它们由呈现引擎拥有
-	// 借静态 createView 包一层 view,见 swapChain::createImageViews。
+	// 借静态 createView 包一层 view,见 SwapChain::createImageViews。
 	class Image
 	{
 	public:

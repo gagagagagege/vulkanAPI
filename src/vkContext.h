@@ -8,7 +8,6 @@
 #include <map>
 
 #include "ValidationLayers.h"
-#include "swapChain.h"
 
 namespace Fish {
 
@@ -29,7 +28,9 @@ namespace Fish {
 
     class vkContext {
     public:
-        vkContext(vk::raii::Instance& instance, vk::raii::SurfaceKHR& surface, const std::vector<const char*>& deviceExtensions, const std::vector<const char*>& validationLayers);
+        // 形参名带下划线是为了不和成员 surface 撞 —— 否则初始化列表里
+        // surface(surface) 看着像自引用
+        vkContext(vk::raii::Instance& instance, vk::raii::SurfaceKHR& surface_, const std::vector<const char*>& deviceExtensions, const std::vector<const char*>& validationLayers);
 
         vk::raii::PhysicalDevice pickPhysicalDevice(vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface, const std::vector<const char*>& deviceExtensions);
         static int determinePhysicalDeviceScore(const vk::raii::PhysicalDevice& device);
@@ -44,5 +45,9 @@ namespace Fish {
         vk::raii::Device device = nullptr;
         vk::raii::Queue graphicsQueue = nullptr;
         vk::raii::Queue presentQueue = nullptr;
+
+        // 引用不是拷贝 —— surface 归 TriangleApp 所有,且必须在 instance 之后、
+        // 所有 device 资源之前销毁。存引用,新类就只收一个 vkContext* 就够。
+        vk::raii::SurfaceKHR& surface;
     };
 }

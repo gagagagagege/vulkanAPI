@@ -1,14 +1,13 @@
 #include "frameData.h"
 
-#include "PhysicalDevice.h"
-#include "commandPool.h"
-#include "uniformBuffer.h"
+#include "vkContext.h"
+#include "CommandPool.h"
+#include "DescriptorAllocator.h"
 
 namespace Fish {
 	FrameData::FrameData(vkContext* context,
-		vk::raii::CommandPool& commandPool,
-		vk::raii::DescriptorPool& descriptorPool,
-		vk::raii::DescriptorSetLayout& descriptorSetLayout,
+		CommandPool& commandPool,
+		DescriptorAllocator& descriptorAllocator,
 		vk::raii::ImageView& textureView,
 		vk::raii::Sampler& textureSampler)
 	{
@@ -16,11 +15,10 @@ namespace Fish {
 		m_uniformBuffer = Buffer(sizeof(UniformBufferObject), vk::BufferUsageFlagBits::eUniformBuffer,
 			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, context);
 
-		m_commandBuffer = commandPool::createCommandBuffer(commandPool, context->device);
+		m_commandBuffer = commandPool.allocateBuffer();
 
 		// 描述符集当场绑上自己那份 UBO —— 配对在构造函数里完成,外面没有搞错的机会
-		m_descriptorSet = uniformBuffer::createDescriptorSet(descriptorPool, descriptorSetLayout,
-			context->device, m_uniformBuffer, textureView, textureSampler);
+		m_descriptorSet = descriptorAllocator.allocate(m_uniformBuffer, textureView, textureSampler);
 
 		m_presentCompleteSemaphore = vk::raii::Semaphore(context->device, vk::SemaphoreCreateInfo{});
 
@@ -30,16 +28,15 @@ namespace Fish {
 	}
 
 	Frames::Frames(uint32_t frameCount, vkContext* context,
-		vk::raii::CommandPool& commandPool,
-		vk::raii::DescriptorPool& descriptorPool,
-		vk::raii::DescriptorSetLayout& descriptorSetLayout,
+		CommandPool& commandPool,
+		DescriptorAllocator& descriptorAllocator,
 		vk::raii::ImageView& textureView,
 		vk::raii::Sampler& textureSampler)
 	{
 		// reserve 掉,避免扩容时移动已有元素
 		m_frames.reserve(frameCount);
 		for (uint32_t i = 0; i < frameCount; i++) {
-			m_frames.emplace_back(context, commandPool, descriptorPool, descriptorSetLayout, textureView, textureSampler);
+			m_frames.emplace_back(context, commandPool, descriptorAllocator, textureView, textureSampler);
 		}
 	}
 }
