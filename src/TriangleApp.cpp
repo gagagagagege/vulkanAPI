@@ -119,7 +119,6 @@ namespace Fish {
 
 	void TriangleApp::drawFrame()
 	{
-		// 这一帧的全部资源都在 frame 里。下标的轮转由 frames 管,
 		FrameData& frame = frames.current();
 
 		auto fenceResult = deviceClass->device.waitForFences(*frame.inFlightFence(), vk::True, UINT64_MAX);

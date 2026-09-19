@@ -36,7 +36,6 @@ namespace Fish {
 	private:
 		GLFWwindow* window = nullptr;
 
-		//析构时逆序
 		vk::raii::Context context;
 		vk::raii::Instance instance = nullptr;
 
@@ -59,21 +58,16 @@ namespace Fish {
 			vk::DynamicState::eScissor
 		};
 
-		// 描述符的 layout + pool,设备级全局一份。必须早于 frames ——
-		// 描述符集要还给这个池(见下面 frames 的声明位置注释)。
 		DescriptorAllocator descriptorAllocator;
 
 		// pipelineLayout 归 Pipeline 自己持有
 		Pipeline graphicsPipeline;
 
-		// 两个池都是"批量单位":commandPool 管每帧的命令缓冲,
-		// transientPool 管上传用的一次性拷贝。必须早于 frames —— 命令缓冲要还回来。
 		CommandPool commandPool;
 		CommandPool transientPool;
 
 		bool framebufferResized = false;
 
-		// 每帧飞行的份数。唯一的配置点。
 		const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 		static const uint32_t WIDTH = 800;
@@ -93,14 +87,8 @@ namespace Fish {
 		Buffer vertexBuffer;
 		Buffer indexBuffer;
 
-		// 声明位置是被约束的:必须晚于 commandPool / transientPool 和 descriptorAllocator。
-		// 逆序析构时 frames 才会先于它们释放 —— 命令缓冲的析构要调
-		// vkFreeCommandBuffers、描述符集的析构要调 vkFreeDescriptorSets,
-		// 两者都需要各自的池还活着。
 		Frames frames;
-		// Image + view + sampler 归 texture 自己持有。
-		// 排在 frames 之后是沿用重构前的顺序,这里不是硬约束 ——
-		// 和上面 frames 那条不同,释放描述符集不碰 image view / sampler。
+
 		texture mainTexture;
 
 	private:

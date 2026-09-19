@@ -9,8 +9,6 @@
 #include <vector>
 
 namespace Fish {
-	// 交换链 + 它派生出来的三样。这四样的边界就是"重建"的边界 ——
-	// resize / out-of-date 时一起换,别的一律不动(管线不重建,见 Pipeline)。
 	class SwapChain
 	{
 	public:
@@ -39,9 +37,6 @@ namespace Fish {
 		void createImageViews();
 		void createRenderFinishedSemaphores();
 
-		// 声明顺序 = 销毁逆序(同 Image.h):view 引用 swapchain 的 image,
-		// 所以要后声明、先销毁。下面三行的销毁顺序是 信号量 → view → swapchain,
-		// 和原来 cleanupSwapChain 里 semaphores.clear() / views.clear() / 句柄置空 一致。
 		vk::raii::SwapchainKHR           m_swapchain = nullptr;
 		std::vector<vk::raii::ImageView> m_imageViews;
 		std::vector<vk::raii::Semaphore> m_renderFinishedSemaphores;
